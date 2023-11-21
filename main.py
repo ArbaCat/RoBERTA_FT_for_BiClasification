@@ -35,7 +35,7 @@ def encode_examples(texts, labels):
   attention_mask_list = []
   label_list = []
   for text, label in zip(texts, labels):
-    bert_input = tokenizer.encode_plus(text, add_special_tokens=True, max_length=512, truncation=True, padding='max_length', return_attention_mask=True)
+    bert_input = tokenizer.encode_plus(text, add_special_tokens=True, max_length=128, truncation=True, padding='max_length', return_attention_mask=True)
     input_ids_list.append(bert_input['input_ids'])
     attention_mask_list.append(bert_input['attention_mask'])
     label_list.append(label)
@@ -52,59 +52,48 @@ class BERTForClassification(tf.keras.Model):
     def __init__(self, bert_model, num_classes):
         super().__init__()
         self.bert = bert_model
-        self.fc = tf.keras.layers.Dense(num_classes, activation='softmax')
+        self.dropout = tf.keras.layers.Dropout(0.5) #adding drop out
+        self.batch_norm = tf.keras.layers.BatchNormalization() #addin normalization
+        self.fc = tf.keras.layers.Dense(num_classes, activation='softmax', kernel_regularizer=regularizers.l2(0.01)) #adding regulizer
         
     def call(self, inputs):
         x = self.bert(inputs['input_ids'], attention_mask=inputs['attention_mask'])[1]
+        x = self.dropout(x) # dropout
+        x = self.batch_norm(x) # normalization
         return self.fc(x)
-
-def matthews_correlation(y_true, y_pred):
-  '''Vypočíta Matthews correlation coefficient
-  y_pred_pos = K.round(K.clip(y_pred, 0, 1))
-  y_pred_neg = 1 - y_pred_pos
-
-  y_pos = K.round(K.clip(y_true, 0, 1))
-  y_neg = 1 - y_pos
-
-  tp = K.sum(y_pos * y_pred_pos)
-  tn = K.sum(y_neg * y_pred_neg)
-
-  fp = K.sum(y_neg * y_pred_pos)
-  fn = K.sum(y_pos * y_pred_neg)
-
-  numerator = (tp * tn - fp * fn)
-  denominator = K.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
-
-  return numerator / (denominator + K.epsilon())
 
 classifier = BERTForClassification(model, num_classes=2)
 
 classifier.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
     loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-    metrics=['accuracy', matthews_correlation]
+    metrics=['accuracy']
 )
 
 history = classifier.fit(
     train_dataset,
-    epochs=5
+    epochs=25
 )
 
 classifier.evaluate(test_dataset)
 
-# Vizualizácia presnosti
+# Visualization part. 1 loss+acc, 2 acc, 3 loss
 plt.figure(figsize=(12, 6))
 plt.plot(history.history['accuracy'], label='trénovacia presnosť')
-plt.plot(history.history['val_accuracy'], label = 'testovacia presnosť')
+plt.plot(history.history['loss'], label='trénovacia strata')
+plt.xlabel('Epocha')
+plt.ylabel('Metrika')
+plt.legend(loc='lower right')
+
+plt.figure(figsize=(12, 6))
+plt.plot(history.history['accuracy'], label='trénovacia presnosť')
 plt.xlabel('Epocha')
 plt.ylabel('Presnosť')
 plt.ylim([0.5, 1])
 plt.legend(loc='lower right')
 
-# Vizualizácia straty
 plt.figure(figsize=(12, 6))
 plt.plot(history.history['loss'], label='trénovacia strata')
-plt.plot(history.history['val_loss'], label = 'testovacia strata')
 plt.xlabel('Epocha')
 plt.ylabel('Strata')
 plt.ylim([0, 1])
